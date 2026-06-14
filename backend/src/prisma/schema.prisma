@@ -1,0 +1,144 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum SplitType {
+  equal
+  unequal
+  percentage
+  share
+}
+
+enum ExpenseStatus {
+  active
+  deleted
+  pending_review
+}
+
+model User {
+  id                Int                @id @default(autoincrement())
+  name              String
+  email             String             @unique
+  password_hash     String
+  created_at        DateTime           @default(now())
+  memberships       GroupMembership[]
+  expenses_paid     Expense[]          @relation("Payer")
+  expense_splits    ExpenseSplit[]
+  settlements_paid  Settlement[]       @relation("SettlementPayer")
+  settlements_rec   Settlement[]       @relation("SettlementRecipient")
+  approved_anomalies ImportAnomaly[]   @relation("ApprovedBy")
+
+  @@map("users")
+}
+
+model Group {
+  id            Int                @id @default(autoincrement())
+  name          String
+  created_at    DateTime           @default(now())
+  memberships   GroupMembership[]
+  expenses      Expense[]
+  settlements   Settlement[]
+
+  @@map("groups")
+}
+
+model GroupMembership {
+  id         Int       @id @default(autoincrement())
+  user_id    Int
+  group_id   Int
+  joined_at  DateTime  @default(now())
+  left_at    DateTime?
+  
+  user       User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  group      Group     @relation(fields: [group_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, group_id])
+  @@map("group_memberships")
+}
+
+model Expense {
+  id                 Int             @id @default(autoincrement())
+  group_id           Int
+  description        String
+  paid_by_user_id    Int
+  amount_original    Float
+  currency_original  String
+  amount_inr         Float
+  exchange_rate_used Float
+  split_type         SplitType
+  expense_date       DateTime
+  created_at         DateTime        @default(now())
+  is_settlement      Boolean         @default(false)
+  import_batch_id    Int?
+  status             ExpenseStatus   @default(active)
+
+  group              Group           @relation(fields: [group_id], references: [id], onDelete: Cascade)
+  payer              User            @relation("Payer", fields: [paid_by_user_id], references: [id])
+  import_batch       ImportBatch?    @relation(fields: [import_batch_id], references: [id])
+  splits             ExpenseSplit[]
+
+  @@map("expenses")
+}
+
+model ExpenseSplit {
+  id          Int      @id @default(autoincrement())
+  expense_id  Int
+  user_id     Int
+  amount_inr  Float
+  percentage  Float?
+  shares      Float?
+
+  expense     Expense  @relation(fields: [expense_id], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("expense_splits")
+}
+
+model Settlement {
+  id              Int      @id @default(autoincrement())
+  group_id        Int
+  paid_by_user_id Int
+  paid_to_user_id Int
+  amount_inr      Float
+  settled_at      DateTime @default(now())
+
+  group           Group    @relation(fields: [group_id], references: [id], onDelete: Cascade)
+  payer           User     @relation("SettlementPayer", fields: [paid_by_user_id], references: [id])
+  recipient       User     @relation("SettlementRecipient", fields: [paid_to_user_id], references: [id])
+
+  @@map("settlements")
+}
+
+model ImportBatch {
+  id             Int             @id @default(autoincrement())
+  filename       String
+  imported_at    DateTime        @default(now())
+  anomaly_report Json
+  expenses       Expense[]
+  anomalies      ImportAnomaly[]
+
+  @@map("import_batches")
+}
+
+model ImportAnomaly {
+  id                Int          @id @default(autoincrement())
+  import_batch_id   Int
+  row_number        Int
+  raw_row           Json
+  anomaly_type      String
+  description       String
+  action_taken      String
+  requires_approval Boolean
+  approved_by       Int?
+  approved_at       DateTime?
+
+  import_batch      ImportBatch  @relation(fields: [import_batch_id], references: [id], onDelete: Cascade)
+  approver          User?        @relation("ApprovedBy", fields: [approved_by], references: [id])
+
+  @@map("import_anomalies")
+}
