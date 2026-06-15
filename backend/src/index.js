@@ -27,6 +27,14 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', time: new Date() });
 });
 
+app.get('/test', (req, res) => {
+  res.json({ 
+    status: 'success', 
+    message: 'Backend deployment is working perfectly!', 
+    timestamp: new Date() 
+  });
+});
+
 app.use('/api/auth', authRouter);
 app.use('/api/groups', groupsRouter);
 app.use('/api/groups/:groupId/expenses', expensesRouter);
