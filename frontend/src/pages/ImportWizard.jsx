@@ -17,6 +17,7 @@ export const ImportWizard = () => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [editingRow, setEditingRow] = useState(null);
   const [isHistoryMode, setIsHistoryMode] = useState(false);
+  const [originalFilename, setOriginalFilename] = useState('Imported Spreadsheet.csv');
 
   useEffect(() => {
     if (groupId) {
@@ -191,13 +192,14 @@ export const ImportWizard = () => {
     }).join('\n');
     
     const newCsvContent = `${headerRow}\n${bodyRows}`;
-    const file = new File([newCsvContent], 'edited_import.csv', { type: 'text/csv' });
+    const file = new File([newCsvContent], originalFilename, { type: 'text/csv' });
     await processFile(file, true);
   };
 
   const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setOriginalFilename(file.name);
     await processFile(file);
   };
 
@@ -288,7 +290,7 @@ export const ImportWizard = () => {
       }).join('\n');
       
       const newCsvContent = `${headerRow}\n${bodyRows}`;
-      const file = new File([newCsvContent], 'edited_import.csv', { type: 'text/csv' });
+      const file = new File([newCsvContent], originalFilename, { type: 'text/csv' });
       await processFile(file, true);
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to create user.');
@@ -467,7 +469,7 @@ export const ImportWizard = () => {
           </div>
         )}
 
-        {uploading && (
+        {uploading && !batchId && (
           <div className="text-center py-20">
             <div className="animate-spin w-10 h-10 border-4 border-brand-500/30 border-t-brand-500 rounded-full mx-auto mb-6"></div>
             <p className="text-slate-300 font-medium">Running Anomaly Detection Pipeline...</p>
@@ -679,7 +681,13 @@ export const ImportWizard = () => {
                 <h3 className="text-lg font-bold text-white flex items-center gap-2 px-2">
                   Anomaly Checklist
                 </h3>
-                <div className="space-y-3">
+                <div className="space-y-3 relative">
+                  {uploading && (
+                    <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-[2px] z-10 flex flex-col items-center justify-center rounded-xl border border-slate-800/50">
+                      <div className="animate-spin w-8 h-8 border-4 border-brand-500/30 border-t-brand-500 rounded-full mb-3"></div>
+                      <p className="text-sm font-semibold text-brand-400 animate-pulse">Re-evaluating...</p>
+                    </div>
+                  )}
                   {anomalies.map((a) => {
                     const isApproved = !!a.approved_at;
                     if (isApproved && !a.requires_approval) return null; // hide dismissed minor anomalies
