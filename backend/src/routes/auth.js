@@ -10,7 +10,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'shared-expenses-super-secret-jwt-k
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax',
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
   maxAge: 30 * 24 * 60 * 60 * 1000
 };
 
