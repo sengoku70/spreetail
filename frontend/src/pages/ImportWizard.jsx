@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { importApi, balancesApi } from '../api';
+import { importApi, balancesApi, expensesApi } from '../api';
 import { Upload, ArrowLeft, ShieldAlert, CheckCircle, FileJson, XCircle, Trash2, ArrowRight, Expand, Shrink } from 'lucide-react';
 
 export const ImportWizard = () => {
@@ -38,6 +38,7 @@ export const ImportWizard = () => {
               splitSummary = names;
             }
             return {
+              expenseId: e.id,
               rowNumber: idx + 1,
               date: new Date(e.expense_date).toLocaleDateString(),
               description: e.description,
@@ -58,7 +59,7 @@ export const ImportWizard = () => {
           mappedRows.forEach(row => {
             if (row.status === 'pending_review') {
               fakeAnomalies.push({
-                id: `pending-${row.rowNumber}`,
+                id: `pending-${row.expenseId}`,
                 anomaly_type: 'PENDING_APPROVAL',
                 row_number: row.rowNumber,
                 requires_approval: true
@@ -106,7 +107,7 @@ export const ImportWizard = () => {
       const splitType = (row.split_type || 'equal').toLowerCase();
       
       if (splitType === 'equal') {
-        const splitters = (row.split_with || '').split(';').map(s => s.trim()).filter(Boolean);
+        const splitters = (row.split_with || row.split_details || '').split(';').map(s => s.trim()).filter(Boolean);
         if (splitters.length > 0) {
           const splitAmount = amount / splitters.length;
           splitters.forEach(s => getB(s).owed += splitAmount);
@@ -250,7 +251,12 @@ export const ImportWizard = () => {
 
   const handleApprove = async (anomalyId) => {
     try {
-      await importApi.approveAnomaly(anomalyId);
+      if (typeof anomalyId === 'string' && anomalyId.startsWith('pending-')) {
+        const expId = parseInt(anomalyId.split('-')[1], 10);
+        await expensesApi.update(gId, expId, {});
+      } else {
+        await importApi.approveAnomaly(anomalyId);
+      }
       setAnomalies(prev =>
         prev.map(a =>
           a.id === anomalyId
@@ -265,7 +271,12 @@ export const ImportWizard = () => {
 
   const handleDiscard = async (anomalyId) => {
     try {
-      await importApi.discardAnomaly(anomalyId);
+      if (typeof anomalyId === 'string' && anomalyId.startsWith('pending-')) {
+        const expId = parseInt(anomalyId.split('-')[1], 10);
+        await expensesApi.delete(gId, expId);
+      } else {
+        await importApi.discardAnomaly(anomalyId);
+      }
       setAnomalies(prev => prev.filter(a => a.id !== anomalyId));
     } catch (err) {
       alert(err.response?.data?.message || 'Discard failed.');

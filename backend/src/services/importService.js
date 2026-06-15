@@ -434,7 +434,7 @@ export async function runImportPipeline(groupId, filename, csvContent) {
             newUser = await prisma.user.create({
               data: {
                 name: newName,
-                email: `${newName.toLowerCase().replace(/[^a-z0-9]/g, '')}@spreetail.com`,
+                email: `${newName.toLowerCase().replace(/[^a-z0-9]/g, '')}_${Date.now()}@spreetail.com`,
                 password_hash: 'default_hash'
               }
             });
@@ -504,7 +504,7 @@ export async function runImportPipeline(groupId, filename, csvContent) {
             newUser = await prisma.user.create({
               data: {
                 name: newName,
-                email: `${newName.toLowerCase().replace(/[^a-z0-9]/g, '')}@spreetail.com`,
+                email: `${newName.toLowerCase().replace(/[^a-z0-9]/g, '')}_${Date.now()}@spreetail.com`,
                 password_hash: 'default_hash'
               }
             });
