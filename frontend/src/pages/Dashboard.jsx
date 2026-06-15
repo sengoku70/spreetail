@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { groupsApi } from '../api';
 import { useAuth } from '../context/AuthContext';
-import { Users, Upload, LogOut, Wallet, User as UserIcon, ArrowRight } from 'lucide-react';
+import { Users, Upload, LogOut, Wallet, User as UserIcon, ArrowRight, Trash2 } from 'lucide-react';
 
 export const Dashboard = () => {
   const [groups, setGroups] = useState([]);
@@ -38,13 +38,29 @@ export const Dashboard = () => {
               Welcome back, {user?.name}. Here are your active roommate balance groups.
             </p>
           </div>
-          <button
-            onClick={() => navigate('/import')}
-            className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl gradient-brand text-white font-semibold shadow-lg shadow-brand-500/15 hover:opacity-95 active:scale-[0.99] transition-all self-start md:self-auto"
-          >
-            <Upload className="w-5 h-5" />
-            <span>Import CSV</span>
-          </button>
+          <div className="flex flex-col sm:flex-row gap-3 mt-4 md:mt-0 self-start md:self-auto">
+            {groups.length > 0 && (
+              <button
+                onClick={async () => {
+                  if (window.confirm('Are you sure you want to delete all workspaces? This action cannot be undone.')) {
+                    await groupsApi.deleteAll();
+                    loadGroups();
+                  }
+                }}
+                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-red-950/40 border border-red-500/20 text-red-400 font-semibold shadow-lg hover:bg-red-950/60 transition-all"
+              >
+                <Trash2 className="w-5 h-5" />
+                <span>Clear All History</span>
+              </button>
+            )}
+            <button
+              onClick={() => navigate('/import')}
+              className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl gradient-brand text-white font-semibold shadow-lg shadow-brand-500/15 hover:opacity-95 active:scale-[0.99] transition-all"
+            >
+              <Upload className="w-5 h-5" />
+              <span>Import CSV</span>
+            </button>
+          </div>
         </header>
 
         {loading ? (
@@ -75,9 +91,23 @@ export const Dashboard = () => {
                 className="glassmorphism p-6 rounded-2xl cursor-pointer hover:border-brand-500/30 glow-hover flex flex-col justify-between group"
               >
                 <div>
-                  <h3 className="text-xl font-bold text-white mb-2 group-hover:text-brand-400 transition-colors">
-                    {group.name}
-                  </h3>
+                  <div className="flex justify-between items-start mb-2">
+                    <h3 className="text-xl font-bold text-white group-hover:text-brand-400 transition-colors">
+                      {group.name}
+                    </h3>
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (window.confirm('Delete this workspace?')) {
+                          await groupsApi.delete(group.id);
+                          loadGroups();
+                        }
+                      }}
+                      className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                   <p className="text-slate-400 text-xs mb-4">
                     Created on {new Date(group.created_at).toLocaleDateString()}
                   </p>

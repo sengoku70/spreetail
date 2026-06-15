@@ -265,4 +265,48 @@ router.delete('/:groupId', async (req, res, next) => {
   }
 });
 
+router.delete('/:groupId', async (req, res, next) => {
+  try {
+    const groupId = parseInt(req.params.groupId, 10);
+    const userId = req.user.id;
+
+    // Check if user is a member
+    const membership = await prisma.groupMembership.findFirst({
+      where: { group_id: groupId, user_id: userId }
+    });
+
+    if (!membership) {
+      return res.status(403).json({ message: 'Not authorized to delete this workspace.' });
+    }
+
+    await prisma.group.delete({
+      where: { id: groupId }
+    });
+
+    return res.json({ message: 'Workspace deleted.' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/', async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+
+    const memberships = await prisma.groupMembership.findMany({
+      where: { user_id: userId }
+    });
+
+    const groupIds = memberships.map(m => m.group_id);
+
+    await prisma.group.deleteMany({
+      where: { id: { in: groupIds } }
+    });
+
+    return res.json({ message: 'All workspaces deleted.' });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;

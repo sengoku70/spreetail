@@ -27,6 +27,7 @@ export const groupsApi = {
   create: (data) => api.post('/groups', data),
   getDetails: (groupId) => api.get(`/groups/${groupId}`),
   delete: (groupId) => api.delete(`/groups/${groupId}`),
+  deleteAll: () => api.delete('/groups'),
   addMember: (groupId, data) => 
     api.post(`/groups/${groupId}/members`, data),
   updateMembershipTimeline: (groupId, userId, data) => 

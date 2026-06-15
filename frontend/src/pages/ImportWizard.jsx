@@ -295,11 +295,7 @@ export const ImportWizard = () => {
     }
   };
 
-  const downloadJSONReport = () => {
-    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(anomalies, null, 2));
-    const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute('href', dataStr);
-    downloadAnchor.setAttribute('download', `import_anomaly_report_batch_${batchId}.json`);
+
   const pendingApprovals = anomalies.filter(a => a.requires_approval && !a.approved_at);
   const hasUnresolvedCriticalAnomalies = anomalies.some(a => a.requires_approval && !a.approved_at && a.anomaly_type !== 'DUPLICATE_EXPENSE_ORIGINAL');
 
