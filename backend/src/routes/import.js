@@ -108,4 +108,39 @@ router.post('/anomalies/:anomalyId/discard', async (req, res, next) => {
   }
 });
 
+router.post('/anomalies/:anomalyId/create-user', async (req, res, next) => {
+  try {
+    const anomalyId = parseInt(req.params.anomalyId, 10);
+    if (isNaN(anomalyId)) {
+      return res.status(400).json({ message: 'Invalid anomaly ID.' });
+    }
+
+    const anomaly = await prisma.importAnomaly.findUnique({
+      where: { id: anomalyId }
+    });
+
+    if (!anomaly) return res.status(404).json({ message: 'Anomaly not found.' });
+
+    const newName = anomaly.raw_row.paid_by.trim();
+    
+    // Check if user already exists exactly
+    let newUser = await prisma.user.findFirst({ where: { name: newName } });
+    if (!newUser) {
+      newUser = await prisma.user.create({
+        data: {
+          name: newName,
+          email: `${newName.toLowerCase().replace(/[^a-z0-9]/g, '')}@spreetail.com`,
+          password_hash: 'default_hash'
+        }
+      });
+    }
+
+    // Since this anomaly is now "resolved" by creating the exact user, 
+    // the frontend will force a re-evaluation which will match this user.
+    return res.json({ message: 'User created successfully.', user: newUser });
+  } catch (error) {
+    return res.status(400).json({ message: error.message || 'User creation failed.' });
+  }
+});
+
 export default router;

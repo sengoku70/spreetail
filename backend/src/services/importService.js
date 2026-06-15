@@ -103,10 +103,19 @@ function matchUserByName(name, allUsers) {
     return { user: null, isAmbiguous: false, normalizedName: '' };
   }
 
-  // Exact or close match
+  // Exact Match First
+  const exactMatches = allUsers.filter(u => u.name.toLowerCase() === cleanName);
+  if (exactMatches.length === 1) {
+    return { user: exactMatches[0], isAmbiguous: false, normalizedName: exactMatches[0].name };
+  }
+  if (exactMatches.length > 1) {
+    return { user: exactMatches[0], isAmbiguous: true, normalizedName: exactMatches[0].name };
+  }
+
+  // Prefix Match
   const matches = allUsers.filter(u => {
     const uName = u.name.toLowerCase();
-    return uName === cleanName || uName.startsWith(cleanName) || cleanName.startsWith(uName);
+    return uName.startsWith(cleanName) || cleanName.startsWith(uName);
   });
 
   if (matches.length === 1) {
@@ -224,6 +233,21 @@ export async function runImportPipeline(groupId, filename, csvContent) {
   const parsedSettlements = [];
   const anomaliesToCreate = [];
 
+  const namesInCsv = new Set();
+  rows.forEach(r => {
+    if (r.paid_by) namesInCsv.add(r.paid_by.trim().toLowerCase());
+    if (r.split_with) {
+      r.split_with.split(';').forEach(s => namesInCsv.add(s.trim().toLowerCase()));
+    }
+    if (r.split_details) {
+      r.split_details.split(';').forEach(part => {
+        const lastSpace = part.lastIndexOf(' ');
+        if (lastSpace !== -1) namesInCsv.add(part.substring(0, lastSpace).trim().toLowerCase());
+        else namesInCsv.add(part.trim().toLowerCase());
+      });
+    }
+  });
+
   const addAnomaly = (rowNum, rawRow, type, desc, action, requiresApproval) => {
     anomaliesToCreate.push({
       import_batch_id: batch.id,
@@ -287,9 +311,14 @@ export async function runImportPipeline(groupId, filename, csvContent) {
 
       amountParsed = parseFloat(rawAmt);
       if (isNaN(amountParsed)) {
-        addAnomaly(rowNum, csvRow, 'INVALID_AMOUNT', `Amount '${csvRow.amount}' is not a valid number`, 'Failed to parse row.', true);
-        errors.push(`Row ${rowNum}: Invalid amount format.`);
-        continue;
+        anomalies.push({
+          type: 'INVALID_AMOUNT',
+          description: `Amount '${csvRow.amount}' is not a valid number.`,
+          action_taken: 'Flagged for review. Amount set to 0 temporarily.',
+          requires_approval: true
+        });
+        amountParsed = 0;
+        status = 'pending_review';
       }
 
       if (amountParsed === 0) {
@@ -307,16 +336,21 @@ export async function runImportPipeline(groupId, filename, csvContent) {
           type: 'NEGATIVE_AMOUNT_REFUND',
           description: `Amount is negative (${amountParsed}).`,
           action_taken: 'Treated as refund. Splits reversed.',
-          requires_approval: false
+          requires_approval: true
         });
+        status = 'pending_review';
       }
 
       const { date, isAmbiguous, normalizedStr } = parseDate(csvRow.date);
       let expenseDate = date;
       if (!expenseDate) {
-        addAnomaly(rowNum, csvRow, 'MISSING_DATE', `Date '${csvRow.date}' could not be parsed`, 'Skipped row.', true);
-        errors.push(`Row ${rowNum}: Invalid date format.`);
-        continue;
+        anomalies.push({
+          type: 'MISSING_DATE',
+          description: `Date '${csvRow.date}' could not be parsed.`,
+          action_taken: 'Defaulted to current date.',
+          requires_approval: false
+        });
+        expenseDate = new Date();
       }
 
       if (csvRow.date !== normalizedStr) {
@@ -325,9 +359,8 @@ export async function runImportPipeline(groupId, filename, csvContent) {
             type: 'AMBIGUOUS_DATE',
             description: `Date '${csvRow.date}' is ambiguous (could be MM/DD or DD/MM). Note: '${csvRow.notes}'`,
             action_taken: `Defaulted to DD/MM/YYYY. Date parsed as ${normalizedStr}.`,
-            requires_approval: true
+            requires_approval: false
           });
-          status = 'pending_review';
         } else {
           anomalies.push({
             type: 'INCONSISTENT_DATE_FORMAT',
@@ -345,17 +378,7 @@ export async function runImportPipeline(groupId, filename, csvContent) {
       const isDeposit = descLower.includes('deposit') || notesLower.includes('deposit');
       const isSettlementNote = notesLower.includes('settlement') || notesLower.includes('not an expense');
       
-      if (isRohanSettlement || isSettlementNote || isDeposit) {
-        isSettlement = true;
-        const type = isDeposit ? 'SAM_DEPOSIT_SETTLEMENT' : 'SETTLEMENT_LOGGED_AS_EXPENSE';
-        anomalies.push({
-          type,
-          description: `Row detected as settlement/deposit instead of expense: '${csvRow.description}'`,
-          action_taken: 'Moved to settlements table.',
-          requires_approval: true
-        });
-        status = 'pending_review';
-      }
+      // We removed the settlement detection anomaly logic here to keep the code simpler.
 
       let currency = csvRow.currency.trim().toUpperCase();
       if (!currency) {
@@ -363,9 +386,10 @@ export async function runImportPipeline(groupId, filename, csvContent) {
         anomalies.push({
           type: 'MISSING_CURRENCY',
           description: 'Currency field is empty.',
-          action_taken: 'Defaulted currency to INR.',
-          requires_approval: false
+          action_taken: 'Defaulted currency to INR but requires confirmation.',
+          requires_approval: true
         });
+        status = 'pending_review';
       }
 
       let rateUsed = 1.0;
@@ -394,10 +418,10 @@ export async function runImportPipeline(groupId, filename, csvContent) {
           
           if (csvRow.paid_by !== normalizedName) {
             anomalies.push({
-              type: 'PAYER_NAME_CASING',
-              description: `Payer name '${csvRow.paid_by}' does not match exactly. Verify if they are the same person.`,
+              type: 'SIMILAR_PAYER_FOUND',
+              description: `Similar payer found: '${csvRow.paid_by}'. Verify if this is the same user as '${normalizedName}'.`,
               action_taken: `Confirm same name. Normalized to '${normalizedName}'.`,
-              requires_approval: true // Enforces user confirmation for name discrepancies (e.g. Priya S -> Priya)
+              requires_approval: true
             });
             status = 'pending_review';
           }
@@ -457,9 +481,10 @@ export async function runImportPipeline(groupId, filename, csvContent) {
         anomalies.push({
           type: 'SPLIT_TYPE_MISMATCH',
           description: `Split type was specified as 'equal' but split details contain numeric weights.`,
-          action_taken: `Treated as 'share' split.`,
-          requires_approval: false
+          action_taken: `Treated as 'share' split. Verify if this is correct.`,
+          requires_approval: true
         });
+        status = 'pending_review';
       }
 
       const cleanSplits = [];
@@ -503,10 +528,11 @@ export async function runImportPipeline(groupId, filename, csvContent) {
         if (membership && membership.left_at && expenseDate > membership.left_at) {
           anomalies.push({
             type: 'MEMBER_INCLUDED_AFTER_LEAVING',
-            description: `Member '${split.name}' was included in split on date ${normalizedStr} after leaving the group on ${membership.left_at.toISOString().split('T')[0]}.`,
-            action_taken: `Removed member '${split.name}' from the split and recalculated.`,
-            requires_approval: false
+            description: `Member '${split.name}' was included in split on date ${normalizedStr || expenseDate.toISOString().split('T')[0]} after leaving the group on ${membership.left_at.toISOString().split('T')[0]}.`,
+            action_taken: `Removed member '${split.name}' from the split. Verify if this is correct.`,
+            requires_approval: true
           });
+          status = 'pending_review';
           continue;
         }
 
@@ -536,7 +562,14 @@ export async function runImportPipeline(groupId, filename, csvContent) {
 
       if (status !== 'pending_review' || !anomalies.some(a => a.type === 'INVALID_PERCENTAGE_SUM')) {
         if (splitTypeClean === 'equal') {
-          const activeSplitUsers = cleanSplits.length > 0 ? cleanSplits.map(s => s.user_id) : groupMemberships.filter(m => !m.left_at || expenseDate <= m.left_at).map(m => m.user_id);
+          // Identify which users actually appeared in the CSV to exclude the logged-in creator if they aren't involved
+          const csvUserIds = new Set();
+          namesInCsv.forEach(n => {
+            const match = matchUserByName(n, allUsers);
+            if (match.user) csvUserIds.add(match.user.id);
+          });
+
+          const activeSplitUsers = cleanSplits.length > 0 ? cleanSplits.map(s => s.user_id) : groupMemberships.filter(m => (!m.left_at || expenseDate <= m.left_at) && csvUserIds.has(m.user_id)).map(m => m.user_id);
           const divisor = activeSplitUsers.length;
           
           cleanSplits.length = 0;
@@ -579,7 +612,7 @@ export async function runImportPipeline(groupId, filename, csvContent) {
         }
       }
 
-      const exactDupeInBatch = parsedExpenses.some(e => 
+      const exactDupeInBatch = parsedExpenses.find(e => 
         areDescriptionsSimilar(e.description, csvRow.description) &&
         e.expense_date.getTime() === expenseDate.getTime() &&
         e.paid_by_user_id === payerId &&
@@ -606,11 +639,11 @@ export async function runImportPipeline(groupId, filename, csvContent) {
         status = 'pending_review';
 
         if (exactDupeInBatch) {
-          addAnomaly(exactDupeInBatch.rowNum, exactDupeInBatch, 'DUPLICATE_EXPENSE_ORIGINAL', `This is the original entry of a duplicate found on row ${rowNum}.`, 'Flagged for reference', false);
+          addAnomaly(exactDupeInBatch.rowNum, csvRow, 'DUPLICATE_EXPENSE_ORIGINAL', `This is the original entry of a duplicate found on row ${rowNum}.`, 'Flagged for reference', false);
         }
       }
 
-      const conflictingDupeInBatch = parsedExpenses.some(e => 
+      const conflictingDupeInBatch = parsedExpenses.find(e => 
         areDescriptionsSimilar(e.description, csvRow.description) &&
         e.expense_date.getTime() === expenseDate.getTime() &&
         Math.abs(e.amount_original - amountParsed) >= 0.01
@@ -811,66 +844,6 @@ export async function approveAnomaly(anomalyId, userId) {
       approved_at: new Date()
     }
   });
-
-  const batchId = anomaly.import_batch_id;
-  const rawRow = anomaly.raw_row;
-
-  if (anomaly.anomaly_type === 'DUPLICATE_EXPENSE') {
-    const exp = await prisma.expense.findFirst({
-      where: {
-        import_batch_id: batchId,
-        description: rawRow.description,
-        amount_original: parseFloat((rawRow.amount || '').replace(/,/g, '').trim()),
-        status: 'pending_review'
-      }
-    });
-    if (exp) {
-      await prisma.expense.update({
-        where: { id: exp.id },
-        data: { status: 'active' }
-      });
-    }
-  } else if (anomaly.anomaly_type === 'SETTLEMENT_LOGGED_AS_EXPENSE' || anomaly.anomaly_type === 'SAM_DEPOSIT_SETTLEMENT') {
-    const exp = await prisma.expense.findFirst({
-      where: {
-        import_batch_id: batchId,
-        description: rawRow.description,
-        is_settlement: true,
-        status: 'pending_review'
-      },
-      include: { splits: true }
-    });
-
-    if (exp) {
-      const recipientId = exp.splits[0]?.user_id || exp.paid_by_user_id;
-      await prisma.settlement.create({
-        data: {
-          group_id: exp.group_id,
-          paid_by_user_id: exp.paid_by_user_id,
-          paid_to_user_id: recipientId,
-          amount_inr: exp.amount_inr,
-          settled_at: exp.expense_date
-        }
-      });
-      await prisma.expense.delete({
-        where: { id: exp.id }
-      });
-    }
-  } else {
-    const exp = await prisma.expense.findFirst({
-      where: {
-        import_batch_id: batchId,
-        description: rawRow.description,
-        status: 'pending_review'
-      }
-    });
-    if (exp) {
-      await prisma.expense.update({
-        where: { id: exp.id },
-        data: { status: 'active' }
-      });
-    }
-  }
 }
 
 export async function discardAnomalyExpense(anomalyId) {

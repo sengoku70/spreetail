@@ -61,4 +61,6 @@ export const importApi = {
     api.post(`/import/anomalies/${anomalyId}/approve`),
   discardAnomaly: (anomalyId) => 
     api.post(`/import/anomalies/${anomalyId}/discard`),
+  createNewUser: (anomalyId) =>
+    api.post(`/import/anomalies/${anomalyId}/create-user`),
 };

@@ -72,7 +72,7 @@ function App() {
           {/* Protected Dashboard & App Routes */}
           <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
             <Route path="/" element={<Dashboard />} />
-            <Route path="/groups/:groupId" element={<GroupDetail />} />
+            <Route path="/groups/:groupId" element={<ImportWizard />} />
             <Route path="/import" element={<ImportWizard />} />
           </Route>
 
