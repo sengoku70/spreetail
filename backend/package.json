@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "node src/index.js",
     "start": "node src/index.js",
-    "postinstall": "npx prisma generate"
+    "postinstall": "chmod +x node_modules/.bin/prisma && prisma generate"
   },
   "dependencies": {
     "@prisma/client": "^5.12.1",
